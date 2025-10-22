@@ -1,13 +1,17 @@
+import { useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Heart, Wand2 } from "lucide-react";
+import { GalleryModal } from "@/components/GalleryModal";
 import example1 from "@/assets/example-1.jpg";
 import example2 from "@/assets/example-2.jpg";
 import example3 from "@/assets/example-3.jpg";
 
 const Gallery = () => {
+  const [selectedImage, setSelectedImage] = useState<any>(null);
+
   const creations = [
     {
       image: example1,
@@ -30,7 +34,6 @@ const Gallery = () => {
       likes: 312,
       creator: "Anonymous",
     },
-    // Duplicate for demo
     {
       image: example1,
       title: "Digital Dreams",
@@ -74,7 +77,11 @@ const Gallery = () => {
             {/* Gallery Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {creations.map((creation, index) => (
-                <Card key={index} className="group overflow-hidden border-border hover:border-primary/50 transition-all duration-300 bg-card/50 backdrop-blur-sm">
+                <Card 
+                  key={index} 
+                  className="group overflow-hidden border-border hover:border-primary/50 transition-all duration-300 bg-card/50 backdrop-blur-sm cursor-pointer"
+                  onClick={() => setSelectedImage(creation)}
+                >
                   <div className="relative aspect-square overflow-hidden">
                     <img
                       src={creation.image}
@@ -87,7 +94,7 @@ const Gallery = () => {
                     <div className="absolute bottom-4 left-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button size="sm" className="w-full bg-primary/90 hover:bg-primary backdrop-blur-sm">
                         <Wand2 className="h-4 w-4 mr-2" />
-                        Generate Similar
+                        View Details
                       </Button>
                     </div>
                   </div>
@@ -112,6 +119,16 @@ const Gallery = () => {
           </div>
         </div>
       </main>
+
+      {selectedImage && (
+        <GalleryModal
+          isOpen={!!selectedImage}
+          onClose={() => setSelectedImage(null)}
+          image={selectedImage.image}
+          prompt={selectedImage.prompt}
+          user={selectedImage.creator}
+        />
+      )}
 
       <Footer />
     </div>

@@ -1,16 +1,34 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Image, Video, FileText, Wand2, Download } from "lucide-react";
+import { Image, Video, FileText, Wand2, Download, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const Studio = () => {
+  const navigate = useNavigate();
+  const { user, credits, refreshCredits } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeTab, setActiveTab] = useState("text-to-image");
+  const [result, setResult] = useState<{ type: string; data: any } | null>(null);
+  const [showLowCreditsAlert, setShowLowCreditsAlert] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      navigate("/auth");
+    }
+  }, [user, navigate]);
+
+  useEffect(() => {
+    setShowLowCreditsAlert(credits < 3);
+  }, [credits]);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -18,13 +36,67 @@ const Studio = () => {
       return;
     }
 
+    if (!user) {
+      toast.error("Please sign in to generate content");
+      navigate("/auth");
+      return;
+    }
+
     setIsGenerating(true);
-    
-    // Simulate generation
-    setTimeout(() => {
-      setIsGenerating(false);
+    setResult(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-content", {
+        body: { type: activeTab, prompt },
+      });
+
+      if (error) {
+        if (error.message.includes("Insufficient credits")) {
+          toast.error("You don't have enough credits!");
+          setShowLowCreditsAlert(true);
+        } else {
+          toast.error(error.message || "Failed to generate content");
+        }
+        return;
+      }
+
+      if (data.imageUrl) {
+        setResult({ type: "image", data: data.imageUrl });
+      } else if (data.text) {
+        setResult({ type: "text", data: data.text });
+      } else if (data.message) {
+        setResult({ type: "message", data: data.message });
+      }
+
+      await refreshCredits();
       toast.success("Generation complete!");
-    }, 3000);
+    } catch (error: any) {
+      console.error("Generation error:", error);
+      toast.error("An error occurred during generation");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!result) return;
+
+    if (result.type === "image") {
+      const link = document.createElement("a");
+      link.href = result.data;
+      link.download = `mindloom-${Date.now()}.png`;
+      link.click();
+      toast.success("Image downloaded!");
+    } else if (result.type === "text") {
+      const blob = new Blob([result.data], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `mindloom-${Date.now()}.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success("Text downloaded!");
+    }
   };
 
   const tools = [
@@ -77,6 +149,20 @@ const Studio = () => {
 
               {/* Main Area */}
               <div className="lg:col-span-3 space-y-6">
+                {/* Low Credits Alert */}
+                {showLowCreditsAlert && (
+                  <Alert className="bg-destructive/10 border-destructive/50">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      You're running low on credits! Visit the{" "}
+                      <a href="/pricing" className="underline font-medium">
+                        Pricing page
+                      </a>{" "}
+                      to get more.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 {/* Input Area */}
                 <Card className="bg-card/50 backdrop-blur-sm">
                   <CardContent className="p-6">
@@ -127,6 +213,52 @@ const Studio = () => {
                           <p className="text-muted-foreground">Creating your masterpiece...</p>
                         </div>
                       </div>
+                    ) : result ? (
+                      <div className="space-y-4">
+                        {result.type === "image" && (
+                          <div className="relative group">
+                            <img 
+                              src={result.data} 
+                              alt="Generated" 
+                              className="w-full rounded-lg"
+                            />
+                            {credits === 10 && (
+                              <div className="absolute bottom-4 right-4 bg-background/80 backdrop-blur-sm px-3 py-1 rounded-full text-xs">
+                                Generated with Mindloom
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {result.type === "text" && (
+                          <div className="p-4 bg-background/50 rounded-lg border border-border">
+                            <p className="text-sm whitespace-pre-wrap">{result.data}</p>
+                          </div>
+                        )}
+
+                        {result.type === "message" && (
+                          <div className="p-4 bg-primary/10 rounded-lg border border-primary/20">
+                            <p className="text-sm text-center">{result.data}</p>
+                          </div>
+                        )}
+                        
+                        <div className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-border">
+                          <div>
+                            <p className="text-sm font-medium">
+                              {result.type === "image" ? "Generated Image" : "Generated Text"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Prompt: {prompt.slice(0, 50)}...
+                            </p>
+                          </div>
+                          {(result.type === "image" || result.type === "text") && (
+                            <Button size="sm" variant="outline" onClick={handleDownload}>
+                              <Download className="h-4 w-4 mr-2" />
+                              Download
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     ) : (
                       <div className="aspect-video bg-muted/20 rounded-lg flex items-center justify-center border-2 border-dashed border-border">
                         <div className="text-center">
@@ -137,23 +269,6 @@ const Studio = () => {
                         </div>
                       </div>
                     )}
-
-                    {/* Example result card */}
-                    <div className="mt-4 p-4 bg-background/50 rounded-lg border border-border hidden">
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <p className="text-sm font-medium">Generated Image</p>
-                          <p className="text-xs text-muted-foreground">Cost: 1 credit</p>
-                        </div>
-                        <Button size="sm" variant="outline">
-                          <Download className="h-4 w-4 mr-2" />
-                          Download
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground italic">
-                        Generated with Mindloom
-                      </p>
-                    </div>
                   </CardContent>
                 </Card>
               </div>

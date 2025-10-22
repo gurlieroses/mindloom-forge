@@ -17,7 +17,6 @@ const Footer = () => {
       links: [
         { to: "/about", label: "About" },
         { to: "/contact", label: "Contact" },
-        { to: "/community", label: "Community" },
       ],
     },
     {
