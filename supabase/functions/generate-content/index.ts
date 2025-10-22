@@ -30,10 +30,14 @@ serve(async (req) => {
       throw new Error("Unauthorized");
     }
 
-    const { type, prompt } = await req.json();
+    const { type, prompt, imageData } = await req.json();
     
     if (!prompt || !type) {
       throw new Error("Missing required fields");
+    }
+
+    if (type === "image-to-video" && !imageData) {
+      throw new Error("Missing image data for image-to-video");
     }
 
     // Check user credits
@@ -51,6 +55,7 @@ serve(async (req) => {
     const creditCosts: Record<string, number> = {
       "text-to-image": 1,
       "text-to-video": 3,
+      "image-to-video": 2,
       "text-to-text": 1,
     };
 
@@ -74,7 +79,28 @@ serve(async (req) => {
     let result: any = {};
 
     // Generate content based on type
-    if (type === "text-to-image") {
+    if (type === "text-to-image" || type === "image-to-video") {
+      let messages: any[] = [];
+      
+      if (type === "image-to-video") {
+        messages = [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: imageData } }
+            ]
+          }
+        ];
+      } else {
+        messages = [
+          {
+            role: "user",
+            content: prompt,
+          }
+        ];
+      }
+
       const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -83,12 +109,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash-image-preview",
-          messages: [
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
+          messages,
           modalities: ["image", "text"],
         }),
       });
@@ -106,7 +127,11 @@ serve(async (req) => {
         throw new Error("No image generated");
       }
 
-      result = { imageUrl };
+      if (type === "image-to-video") {
+        result = { videoUrl: imageUrl, message: "Video generation coming soon! Here is a preview image." };
+      } else {
+        result = { imageUrl };
+      }
     } else if (type === "text-to-text") {
       const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
@@ -163,7 +188,7 @@ serve(async (req) => {
       user_id: user.id,
       type,
       prompt,
-      result_url: result.imageUrl || null,
+      result_url: result.imageUrl || result.videoUrl || null,
       result_text: result.text || null,
       credits_used: creditsNeeded,
     });

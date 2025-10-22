@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Image, Video, FileText, Wand2, Download, AlertCircle } from "lucide-react";
+import { Image, Video, FileText, Wand2, Download, AlertCircle, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +19,7 @@ const Studio = () => {
   const [activeTab, setActiveTab] = useState("text-to-image");
   const [result, setResult] = useState<{ type: string; data: any } | null>(null);
   const [showLowCreditsAlert, setShowLowCreditsAlert] = useState(false);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -30,7 +31,31 @@ const Studio = () => {
     setShowLowCreditsAlert(credits < 3);
   }, [credits]);
 
+  useEffect(() => {
+    // Clear prompt and result when changing tabs
+    setPrompt("");
+    setResult(null);
+    setUploadedImage(null);
+  }, [activeTab]);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setUploadedImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+      toast.success("Image uploaded!");
+    }
+  };
+
   const handleGenerate = async () => {
+    if (activeTab === "image-to-video" && !uploadedImage) {
+      toast.error("Please upload an image first");
+      return;
+    }
+
     if (!prompt.trim()) {
       toast.error("Please enter a prompt");
       return;
@@ -47,7 +72,11 @@ const Studio = () => {
 
     try {
       const { data, error } = await supabase.functions.invoke("generate-content", {
-        body: { type: activeTab, prompt },
+        body: { 
+          type: activeTab, 
+          prompt,
+          imageData: activeTab === "image-to-video" ? uploadedImage : undefined
+        },
       });
 
       if (error) {
@@ -62,6 +91,8 @@ const Studio = () => {
 
       if (data.imageUrl) {
         setResult({ type: "image", data: data.imageUrl });
+      } else if (data.videoUrl) {
+        setResult({ type: "video", data: data.videoUrl });
       } else if (data.text) {
         setResult({ type: "text", data: data.text });
       } else if (data.message) {
@@ -102,6 +133,7 @@ const Studio = () => {
   const tools = [
     { id: "text-to-image", label: "Text → Image", icon: Image },
     { id: "text-to-video", label: "Text → Video", icon: Video },
+    { id: "image-to-video", label: "Image → Video", icon: Upload },
     { id: "text-to-text", label: "Text → Text", icon: FileText },
   ];
 
@@ -167,12 +199,54 @@ const Studio = () => {
                 <Card className="bg-card/50 backdrop-blur-sm">
                   <CardContent className="p-6">
                     <div className="space-y-4">
+                      {activeTab === "image-to-video" && (
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">
+                            Upload Image
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleImageUpload}
+                              className="hidden"
+                              id="image-upload"
+                            />
+                            <label
+                              htmlFor="image-upload"
+                              className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors"
+                            >
+                              {uploadedImage ? (
+                                <img
+                                  src={uploadedImage}
+                                  alt="Uploaded"
+                                  className="h-full w-auto rounded-lg object-contain"
+                                />
+                              ) : (
+                                <div className="text-center">
+                                  <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                                  <p className="text-sm text-muted-foreground">
+                                    Click to upload image
+                                  </p>
+                                </div>
+                              )}
+                            </label>
+                          </div>
+                        </div>
+                      )}
+
                       <div>
                         <label className="text-sm font-medium mb-2 block">
-                          Describe what you want to create
+                          {activeTab === "image-to-video" 
+                            ? "Describe how to animate the image" 
+                            : "Describe what you want to create"}
                         </label>
                         <Textarea
-                          placeholder="e.g., A futuristic cityscape with neon lights and flying cars..."
+                          placeholder={
+                            activeTab === "image-to-video"
+                              ? "e.g., Make the clouds move slowly, add gentle wind effects..."
+                              : "e.g., A futuristic cityscape with neon lights and flying cars..."
+                          }
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
                           className="min-h-32 resize-none bg-background/50"
@@ -229,6 +303,21 @@ const Studio = () => {
                             )}
                           </div>
                         )}
+
+                        {result.type === "video" && (
+                          <div className="relative group">
+                            <video 
+                              src={result.data} 
+                              controls
+                              className="w-full rounded-lg"
+                            />
+                            {credits === 10 && (
+                              <div className="absolute bottom-4 right-4 bg-background/80 backdrop-blur-sm px-3 py-1 rounded-full text-xs">
+                                Generated with Mindloom
+                              </div>
+                            )}
+                          </div>
+                        )}
                         
                         {result.type === "text" && (
                           <div className="p-4 bg-background/50 rounded-lg border border-border">
@@ -245,7 +334,8 @@ const Studio = () => {
                         <div className="flex items-center justify-between p-4 bg-background/50 rounded-lg border border-border">
                           <div>
                             <p className="text-sm font-medium">
-                              {result.type === "image" ? "Generated Image" : "Generated Text"}
+                              {result.type === "image" ? "Generated Image" : 
+                               result.type === "video" ? "Generated Video" : "Generated Text"}
                             </p>
                             <p className="text-xs text-muted-foreground">
                               Prompt: {prompt.slice(0, 50)}...

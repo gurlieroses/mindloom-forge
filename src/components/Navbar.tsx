@@ -29,7 +29,7 @@ const Navbar = () => {
             <img 
               src={logo} 
               alt="Mindloom" 
-              className="h-8 w-auto transition-transform group-hover:scale-110"
+              className="h-12 w-auto transition-transform group-hover:scale-110"
             />
           </Link>
 
